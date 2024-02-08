@@ -1,0 +1,334 @@
+---
+title: |
+  <p style="color:purple; text-align:center"> **HMA heterogeneity paper** </p>
+  <center> **HL60 scNMT (RNAseq) data** </centre>
+  <p style="text-align:center; font-size:32px"> Evaluation of normalisation and batch correction methods (integrating three batches) </p>
+
+author: "Sean Burnard"
+email: "sean.burnard@newcastle.edu.au"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+params:
+  fig.results: 'asis'
+  shape: 16
+  alpha: 0.75
+  eval.fig: TRUE
+  eval.run.analysis: FALSE
+output:   
+  html_document:
+    number_sections: TRUE
+    toc: TRUE
+    toc_float:
+      toc_collapsed: FALSE
+    toc_depth: 4
+    css: style.css
+---
+
+This report performs and assesses QC filtering, normalisation and batch correction of scRNAseq data (from scNMT dataset) across 3 batches of treated and untreated single cells.
+
+
+---
+
+# RNAseq
+
+## Prepocessing steps
+
+1. Aligned '.bam' files were generated using Hisat2, retaining ambiguous/ multi-mapping reads.
+   + INCLUDE COMMANDS/ PARAMS USED
+2. All three levels (single cells, scNMT and bulk) were analysed using either TEtranscripts (see chosen commands below)
+   + TEtranscripts: TEcount --sortByPos --mode multi --TE {TE_GTF} --GTF {Genome_GTF} --project {params.project} -b {input} 2>{output.log}
+   + N.B. TEtranscripts was run using the gene reference and TE annotation files from scTE (removing the Chr#'s to allow it to run with TEtranscripts). This was to allow for a more 'up to date' TE reference build to be used (as TEtranscripts was first made back in 2012)
+3. snakemake was used to run and automate TEtranscripts on the UoN HPC for all samples.
+   + After all individual files completed their TEtranscripts run the files were then merged into a single 'Merged.cntTable'
+    
+4. This report will then pick up from the 'Merged.cntTable' output for all three batches.
+   + A custom 'conversion/update' table for both genes was created using the information from the gene annotation to update the output of TEtranscripts.
+   + Filtered for genes/TEs with a minimum of 5 reads in at least 10% cells.
+   + Samples failing additional QC metrics were removed.
+
+---
+
+```{r setup}
+library(knitr)
+```
+
+### Creation of gene information and ID conversion (hgnc and ensembl) table.
+THIS STEP IS ALREADY DONE
+
+This is based directly on the annotation (GTF) file used
+The output of TEtranscripts is ensembl ID and counts. Therefore, this table provides a way to update the output with the information already contained within the gene GTF file (annotation file) used in the TEtranscripts run. This code was based on https://www.biostars.org/p/140471/
+
+| For gencode: https://www.gencodegenes.org/pages/data_format.html
+* select mouse or human and 'recent relase' (for latest) or 'release history' for older
+* Download GTF file for 'Comprehensive gene annotation' (regions = CHR) OR right click and 'save the link address' then use wget.
+
+| For ensembl: https://asia.ensembl.org/info/data/ftp/index.html
+* Find your species of interest.
+* Click the corresponding GTF file under 'Gene Sets'
+* Download either the '.chr.gtf.gz' or full release (no 'chr' in the name and just the release number  i.e. 'GRCh38.104.gtf.gz')
+
+N.B. These should be the same gene GTF files used in the TEtranscripts step!
+
+
+```{r Create_annotation_table, echo = TRUE, eval = FALSE}
+
+library(rtracklayer)
+library(dplyr)
+library(readr)
+
+# Version 1 (gencode)
+GTF_file <- "./scripts/annos/GTF_files/genes/gencode.v30.annotation_MT_noChr_corrected.gtf" #v2 was using gencode.v30.annotation_NoChr.gtf (only minor update - 'MT' name)
+newGTF <- import(GTF_file)
+newGTF2 <- as.data.frame(newGTF)
+# Extract only genes and export standardised table (used for downstream analysis)
+newGTF2 <- newGTF2 %>% 
+        filter(type == "gene") %>% 
+        dplyr::select(Geneid = gene_id, GeneSymbol = gene_name, 
+        Chromosome = seqnames, Start = start, End = end, 
+        Class = gene_type, Strand = strand, Length = width) %>%
+        mutate(Chromosome = gsub("chr", "", Chromosome)) ## Removes 'chr' in case GTF file was from ensembl (and not already removed)
+
+write_tsv(newGTF2, file = "./scripts/annos/gencode.v30_gene_annotation_table3.txt")
+
+
+```
+
+
+
+### Update cntTable(s)
+THIS STEP IS ALREADY DONE
+
+See:   
+* RNAseq count table(s): /research/canepi/Sequencing_Data_Raw/2_Processed/200804_KU_NextSeq_scNMT-scRNAseq/TEtranscripts/060320/Passing_QC/TE_and_gene_counts_Updated_and_Raw_QCd.txt   
+* RNAseq count table(s): /research/canepi/Sequencing_Data_Raw/2_Processed/200804_KU_NextSeq_scNMT-scRNAseq/TEtranscripts/250620/Passing_QC/TE_and_gene_counts_Updated_and_Raw_QCd.txt   
+* RNAseq count table(s): /research/canepi/Sequencing_Data_Raw/2_Processed/220606_HL_NOVAseq_scRNAseq_HL/TEtranscripts/Passing_QC/TE_and_gene_counts_Updated_and_Raw_QCd.txt
+
+## QC
+
+### Create SCE 
+
+This has been updated to automatically detect and merge files if given a path/filename that matches more than one file.
+```{r, echo = T, eval = F, warning=F, message = F}
+source("./scripts/Create_sce_from_TEtranscritps_raw_counts_scNMT.R")
+
+create_sce_scNMT(input.counts = "./1_data/scNMT/RNAseq/TE_and_gene_counts_Updated_and_Raw", * Will automatically detect and try to merge all files with a matching common basename.
+                 sample.sheet = "./1_data/scNMT/QC_Summary_combined_NMT_all_batches.csv",
+                 sample.sheet.name.column = "Sample",
+                 output.directory =  "./2_results/scNMT/RNAseq")
+
+```
+
+### Run QC
+
+This is to run the QC and filtering (of features) script:
+
+```{r, echo = T, eval = F, warning=T, message = T}
+# This includes initial QC and secondary filtered QC
+
+source("./scripts/Perform_sce_QC_and_filter-seqmonk_based.R")
+
+perform_QC_scRNAseq(input.file = "./2_results/scNMT/RNAseq/sce.rds",
+                    output.file.dir = './2_results/scNMT/RNAseq',
+                    output.fig =  'figures/scNMT/RNAseq/QC',
+                    min.counts = 5,
+                    min.cells = NA,
+                    min.cells.percentage = 10, # If a number is entered here, 'min.cells' is ignored.
+                    batch.order.col = c("b320" = "#D55E00", "b620" = "#009E73", "b322" = "#0072B2"))
+
+```
+
+
+
+### Unfiltered/Initial QC (QC1)
+The inititial QC assessment is utilising the scran::scater() package.
+
+#### QC overview {.tabset}
+There is clear difference in library size across the three batches, particularly comparing the third batch (b322) with the first two.
+| This is further highlighted in the second plot, with the first batch (b320) having both a lower library size and an on average lower number of features detected.
+
+##### Density plot {.unnumbered}
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq/QC/scNMT_QC1-libsizes.png')
+```
+
+##### Library size vs Features + Batch and % Mito {.unnumbered}
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq/QC/scNMT_QC1-scatter.png')
+```
+
+#### Inidividual QC plots 
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq/QC/scNMT_QC1-combined.png')
+```
+
+#### PCA
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq/QC/scNMT_QC1-PCA.png')
+```
+
+
+### Filtered/secondary QC (QC2) 
+
+Samples are filtered based on the results from the seqmonk QC (see scNMT_QC markdown) that produced a list of samples passing QC. Then genes/TEs are filter for above thresholds to remove missing/lowly expressed genes, by requiring x amount of reads in at least Y% cells/samples.
+
+#### Inidividual QC plots {.unnumbered}
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq/QC/scNMT_QC2-combined.png')
+```
+
+#### PCA {.unnumbered}
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq//QC/scNMT_QC2-PCA.png')
+```
+
+#### PCA gene and TE features separately {.unnumbered}
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq//QC/scNMT_QC2-PCA-Genes_TEs_separate.png')
+```
+
+
+#### Comparing Variables explained from initial and filtered dataset {.unnumbered}
+
+scater can also compute the marginal R2 for each variable when fitting a linear model regressing expression values for each gene against just that variable, and display a density plot of the gene-wise marginal R2 values for the variables.
+| Each line corresponds to one factor and represents the distribution of R2 values across all genes. The factors being regressed/ plotted are ranked and ordered (as are their colours), so the 'top' factor (in blue) in the legend is the one that explains 'the most' amount of variance in the dataset. 
+
+```{r, echo = params$echo.fig, out.width='100%', output.height="100%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/scNMT/RNAseq/QC/scNMT_QC1.2-explanatoryvariables.png')
+```
+
+Here, we can see 'batch' accounts for more variance in expression than treatment in both the initial QC and post filtering. After filtering, number of genes and TEs detected and batch still explain the highest amounts of variance. The subset of mitochondria explains the least amount of variance across this data. Therefore, batch correction needs to applied.
+
+
+## Normalisation and Batch Correction
+
+### Seurat {.tabset}
+https://satijalab.org/seurat/articles/integration_introduction.html
+
+'Seurat v4 includes a set of methods to match (or ‘align’) shared cell populations across datasets. These methods first identify cross-dataset pairs of cells that are in a matched biological state (‘anchors’), can be used both to correct for technical differences between datasets (i.e. batch effect correction), and to perform comparative scRNA-seq analysis of across experimental conditions.'   
+Seurat uses it's own normalisation approach + batch correction by:   
+- Normalise batches separately (vst or SCTransform) and identify 'x HVGs'.
+- Identify the common HVGs across the three batches to uses as 'anchors'
+- Uses the identified 'anchors' with  canonical correlation analysis (CCA) + MNN to batch correct (need further reading)   
+
+Optimal method found and used was Seurat SCTransform + integration (normalisation + batch correction)
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/batch_correction_Seurat.R")
+
+
+batch_correction_seurat4(input.file = "2_results/scNMT/RNAseq/sce_qc2.rds", 
+                         output.file = "2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4.rds",
+                         output.fig.dir = 'figures/scNMT/RNAseq/Batch_Correction/Seurat/',
+                         assay.name = "Seurat", # This is the assay name in the output RDS.
+                         batch.column = 'Batch',
+                         seurat.norm = "SCTransform", # Can be either 'SCTransform' or 'vst'.                                     seurat.SCTransform.vst.flavor = "v2", # NOT CODED YET. Only used if 'seurat.norm = SCTransform'. 
+                         nhvgs = 5000, # Number of highly variable genes used for anchoring detection and integration (retained in output batch corrected rds file)
+                         k.weight = 50, # seurat default is 100. Adjusted for lower throughput scNMT data (96 well plates + QC requirements).
+                         set.the.seed = TRUE,
+                         force = FALSE)
+
+```
+
+
+Update integrated assay with NAs for features/cells that previously contained 'missing' data, and were imputed.
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/batch_correction_Seurat.R")
+
+
+seurat_update_with_NAs(input.seurat.rds = "2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4.rds",
+                       output.file = "2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs.rds",
+                       assay.with.missing.values = "RNA",
+                       assay.to.add.missing.values = "integrated",
+                       new.assay.name = "integrated_NAs")
+
+```
+
+#### Combined plot {.unnumbered}
+```{r, results=params$fig.results}
+nvhgs <- 5000
+norm <- 'SCTransform'
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/sce_qc2_Seurat4_SCTransform_5000_batch_vs_tx.png')
+```
+
+#### PCA {.unnumbered}
+```{r, results=params$fig.results}
+nvhgs <- 5000
+norm <- 'SCTransform'
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/sce_qc2_Seurat4_SCTransform_5000_PCA.png')
+```
+
+#### UMAP {.unnumbered}
+```{r, results=params$fig.results}
+nvhgs <- 5000
+norm <- 'SCTransform'
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/sce_qc2_Seurat4_SCTransform_5000_UMAP.png')
+```
+
+#### TEs PCA {.unnumbered}
+```{r, results=params$fig.results}
+nvhgs <- 5000
+norm <- 'SCTransform'
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/sce_qc2_Seurat4_SCTransform_5000_TEs.png')
+```
+
+#### TE PCA co-expression {.unnumbered}
+```{r, results=params$fig.results}
+nvhgs <- 5000
+norm <- 'SCTransform'
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/sce_qc2_Seurat4_SCTransform_5000_TE_Expr_overlap.png')
+```
+
+#### TE Ridge-Violin {.unnumbered}
+```{r, results=params$fig.results}
+nvhgs <- 5000
+norm <- 'SCTransform'
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/sce_qc2_Seurat4_SCTransform_5000_TEs_Violin-Ridge_v2.png')
+```
+
+
+### Convert seurat to sce + compare Explanatory Variables {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/convert_seurat_to_sce.R")
+
+convert_seurat_to_sce(sce.original = "2_results/scNMT/RNAseq/sce_qc2.rds",
+                      seurat.corrected = "2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs.rds",
+                      output.sce = "2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs_sce.rds",
+                      compare.raw.vs.corrected = TRUE,
+                      output.fig.dir = "./figures/scNMT/RNAseq/Batch_Correction/Seurat/")
+```
+#### Integrated Only
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/ExplanatoryVariables-integrated.png')
+```
+
+#### Raw vs Integrated
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/ExplanatoryVariables-raw_vs_integrated.png')
+```
+
+### Compare counts pre-post correction
+ Compare feature counts for batch corrected vs normalised and 'raw'
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/Plot_RNAseq_correction_comparison.R")
+
+
+plot_corrected_counts_comparison(input.seurat.rds = "2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4.rds",
+                                 output.fig = "figures/scNMT/RNAseq/Batch_Correction/Seurat/Seurat_correction_counts_comparison.png",
+                                 raw.assay = "RNA",
+                                 norm.assay = "SCT",
+                                 corrected.assay = "integrated",
+                                 batch.order = c("b320","b620","b322"),
+                                 batch.names = c("060320" =  "b320", "250620" = "b620", "220331" = "b322"))
+```
+Each point shows the mean counts for a feature across cells by treatment in a given batch. This compares counts for raw --> normalised --> batch corrected.
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/RNAseq/Batch_Correction/Seurat/Seurat_correction_counts_comparison.png')
+```
+

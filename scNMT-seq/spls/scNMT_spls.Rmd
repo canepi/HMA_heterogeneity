@@ -1,0 +1,988 @@
+---
+title: |
+  <p style="color:purple; text-align:center"> **HMA heterogeneity paper** </p>
+  <center> **HL60 scNMT data** </centre>
+  <p style="text-align:center; font-size:32px"> Performing mint.block.spls analysis on the integrated and batch corrected scNMT data </p>
+
+author: "Sean Burnard"
+email: "sean.burnard@newcastle.edu.au"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+params:
+  fig.results: 'asis'
+  shape: 16
+  alpha: 0.75
+  eval.fig: TRUE
+  echo.fig: FALSE
+  eval.run.analysis: FALSE
+output:   
+  html_document:
+    number_sections: TRUE
+    toc: TRUE
+    toc_float:
+      toc_collapsed: FALSE
+    toc_depth: 4
+    css: style.css
+---
+
+This report is using batch corrected RNAseq and GpC data, and (u)normalised CpG data.
+
+
+---
+
+```{r setup, echo = FALSE}
+library(knitr)
+```
+
+# RNAseq
+Already QC'd, normalised and batch corrected. See 'scRNAseq_QC_Norm_Batch_Correction.html'.
+
+# NOMeSeq
+
+## Create NOMeSeq MAE
+
+Read in CpG - (unormalised - 'rate')  
+
+Read in GpG - (batch corrected - 'norm.rate')
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/create_NOMeSeq_MAE.R")
+
+create_NOMeSeq_MAE(input.dir = "A:/Papers_in_preparation/HMA_Heterogeneity/Data/scNMT-seq/Normalised",
+                   CpG.assay = "rate",      # 'rate' = unnormalised and norm.rate = 'normalised'
+                   GpC.assay = "norm.rate", # 'rate' = unnormalised and norm.rate = 'normalised + batch corrected.
+                   min.CpG = 5,             # Threshold of minimal number of total CpGs at loci. Replaces them with 'NA' if under this value.
+                   min.GpC = 20,            # Threshold of minimal number of total GpCs at loci. Replaces them with 'NA' if under this value.
+                   remove.rows.with.all.NAs = TRUE, # Automatically removes any row with all NAs (after applying 'min' filtering).
+                   batch = NA,
+                   chr.to.keep = c(1:22), # Autosomal chromosomes only
+                   output.file ="./2_results/scNMT/NOMeSeq/Autosomal/NOMeSeq_MAE_upd.rds")
+```
+
+## Cell detection {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/cell_detection_for_features_by_assays.R")
+
+cell_detection_by_assay(input.sce = "A:/sean_Burnard/1_Projects/HMA_Heterogeneity/2_results/scNMT/NOMeSeq/Autosomal/NOMeSeq_MAE_upd.rds",
+                        output.file = "./2_results/scNMT/NOMeSeq/Autosomal/NOMeSeq_MAE_cell_detection.rds",
+                        output.fig = "./figures/scNMT/NOMeSeq/Autosomal/cell_detection",
+                        plot.width = 9, plot.height = 6)
+```
+
+### Met
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/cell_detection_CpG.png')
+```
+
+### Acc
+
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/cell_detection_GpC.png')
+```
+
+## Calculate and visualise PCAs (by nipals - PLS) 
+Non-linear Iterative Partial Least Squares (NIPALS) algorithm
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/calc_pca.R")
+
+calc_pca_met_acc(input.file = "A:/sean_Burnard/1_Projects/HMA_Heterogeneity/2_results/scNMT/NOMeSeq/Autosomal/NOMeSeq_MAE_upd.rds",
+                 output.folder = "./2_results/scNMT/NOMeSeq/Autosomal/pca",
+                 n_hvrs = 5000,
+                 batch = NA,
+                 pctcells = 25,
+                 ncomps = 3,
+                 fitted = TRUE,
+                 run.parallel = TRUE, 
+                 set.the.seed = TRUE)
+```
+
+Visualise PCA calculations
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/viz_pca.R")
+
+viz_pca(input.folder = "./2_results/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3",
+        meta.data = "./2_results/scNMT/NMT/cell_metadata.tsv",
+        plot.folder = "./figures/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3",
+        plot.width = 16,
+        plot.height = 16,
+        treatment_colours = c("Unt" = "#00BA38", "AZA" =  "#619CFF", "DAC"  = "#F8766D"),
+        batch_colours = c("b320" =  "#F8766D", "b620"  = "#00BA38", "b322" = "#619CFF") # This also decides the order
+        )
+```
+
+### Met {.tabset .unnumbered}
+
+#### PCA 1-2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3/met-PCs12-combined.png')
+```
+
+#### PCA 1-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3/met-PCs13-combined.png')
+```
+
+#### PCA 2-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3/met-PCs23-combined.png')
+```
+
+### Acc {.tabset .unnumbered}
+
+#### PCA 1-2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3/acc-PCs12-combined.png')
+```
+
+#### PCA 1-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3/acc-PCs13-combined.png')
+```
+
+#### PCA 2-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NOMeSeq/Autosomal/pca/Batch_NA_pctCells_25_nhvrs_5000_ncomps_3/acc-PCs23-combined.png')
+```
+
+# NMT 
+
+## Combine NOMeSeq + RNAseq
+
+Update RNAseq samples (col)names to match the format used by CpG/GpC: Tx.batch.Well (DAC.b620.A10)
+
+Combine NOMeSeq MAE with RNAseq SCE.   
+
+*Autosomal only*
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/create_NMT_MAE.R")
+
+create_NMT_MAE(input.MAE.NOME ="./2_results/scNMT/NOMeSeq/Autosomal/NOMeSeq_MAE_upd.rds",
+               input.RNA.sce = "A:/sean_Burnard/1_Projects/HMA_Heterogeneity/2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs_sce.rds",
+               RNA.assay = "integrated", # Which assay to keep. Others will be dropped in the combined
+               chr.to.keep.RNA = c(1:22, NA),
+               output.file = "./2_results/scNMT/NMT/Autosomal/NMT_MAE.rds")
+```
+
+## Create TX only (remove Unt) RDS file
+
+Create Tx_only NMT version:   
+*Autosomal only*
+```{R, warnings='hide', eval=!!FALSE}
+
+input.file <- "./2_results/scNMT/NMT/Autosomal/NMT_MAE.rds"
+output.file <- "./2_results/scNMT/NMT/Autosomal/NMT_MAE_Tx_only.rds"
+
+input.MAE <- readRDS(input.file)
+
+Tx_only_MAE <- subsetByColData(input.MAE, colData(input.MAE)$Treatment != "Unt")
+
+saveRDS(Tx_only_MAE, file = output.file)
+
+
+```
+
+
+## spls model options {.tabset}
+
+### block.spls (Unsupervised - shared variation) {.unnumbered}
+We opted for this model
+
+$$Transcriptome \sim \sum_{genomic\ regions} (CpG + GpC)$$ 
+
+### block.splsda (Supervised - uses Treatment info) {.unnumbered}
+
+$$Treatment \sim\ RNA\ + \sum_{genomic\ regions} (CpG + GpC)$$ 
+
+
+We decided not to run this analysis as we are more focused on how the change in expression is explained by changes in the profile of methylation and accessibility following treatment by HMAs.
+
+However, we could run this if we want to identify the differences between Treatments (DAC vs AZA) for Expr + Met + Acc. This might also be revealed by running the unsupervised analysis without the untreated group?!
+
+
+### block.spls reduced/targetted blocks {.unnumbered}
+
+This will be tested and done using the HPC.
+The reduced blocks (for both met and acc) will be:
+
++ CGI
++ Window3k1k
++ H3K27ac
++ H3K4me3
++ Promoter
+
+### Parameter optimisation {.unnumbered}
+
+The following parameters were considered during optimisation and selection:
+
+* Which X 'blocks' (genomic contexts) are included.
+* Number of features for each component (1-3) on Y (RNA).
+* Number of features for each component (1-3) on all X blocks.
+* % cells detected/containing data of the 'feature'
+
+
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+# spls
+
+----------------------------------------------------------------------------------------------------------------------------------
+Run on Tx (Autosomal) only: ./2_results/scNMT/NMT/Autosomal/NMT_MAE_Tx_only.rds   
+
+
++ Tx Only
++ Y 100,100,50 (comp1:3)
++ X 50,50,50 (comp1:3)
++ 10pct
++ Unsupervised mint.block.spls (Y = RNA)
++ Focused (X) blocks:
+   * CGI
+   * H3K27ac
+   * H3K4me3
+   * Promoter
+   * Window3k1k
+
+## Run spls model  (10pct Y100-100) 
+
+```{bash, eval = FALSE}
+
+# Create and copy relevant files
+## Input data
+rsync --dry-run -vhr /research/canepi/sean_Burnard/1_Projects/HMA_Heterogeneity/2_results/scNMT/NMT/Autosomal/NMT_MAE_Tx_only.rds ~/NOMeSeq.HMA/output_current/Autosomal/
+## R and bash scripts to run
+rsync --dry-run -vhr /research/canepi/sean_Burnard/1_Projects/HMA_Heterogeneity/scripts/scNMT/mint_wrapper.R ~/NOMeSeq.HMA/src/bash_qsub/
+
+mkdir -p ~/NOMeSeq.HMA/output_current/Autosomal/finalised_models/pct10_Y100-100_Tx_only/ 
+rsync --dry-run -vhr /research/canepi/sean_Burnard/1_Projects/HMA_Heterogeneity/scripts/scNMT/HPC/run_mint_wrapper.R /research/canepi/sean_Burnard/1_Projects/HMA_Heterogeneity/scripts/scNMT/HPC/Run_R_mint_wrapper.sh ~/NOMeSeq.HMA/output_current/Autosomal/finalised_models/pct10_Y100-100_Tx_only/  
+  
+## qsub on HPC
+cd ~/NOMeSeq.HMA/output_current/Autosomal/finalised_models/pct10_Y100-100_Tx_only/  
+qsub ./Run_R_mint_wrapper.sh
+
+
+## Copy results back
+rsync --dry-run -vhr ~/NOMeSeq.HMA/output_current/Autosomal/finalised_models/pct10_Y100-100_Tx_only /research/canepi/sean_Burnard/1_Projects/HMA_Heterogeneity/2_results/scNMT/NMT/Autosomal/
+
+```
+
+```{bash, eval = FALSE}
+####
+ # This is what's been specified
+mint_wrapper(fun = 'mint.block.spls', 
+             mae.path = '~/NOMeSeq.HMA/output_current/NMT_MAE_Tx_only.rds', 
+             out.dir = '~/NOMeSeq.HMA/output_current/finalised_models/pct10_Y100-100_Tx_only/', 
+             assay.blocks.to.measure = c("met_CGI","met_H3K27ac","met_H3K4me3","met_Promoter","met_Window3k1k", "acc_CGI","acc_H3K27ac","acc_H3K4me3","acc_Promoter","acc_Window3k1k"), # Default will use all available blocks/assay. 
+             se.blocks.assay = NA, # Filters specific assay within all SingleExperiments used as blocks. Defaults to the first assay if multiple are available and none specified.
+             rna.experiment = 'rna',
+             rna.assay = 'rna', # Specify which assay within the RNA experiment.
+             mode = 'canonical', 
+             pct_cells_detected = 10,
+             n_hvrs = 0, 
+             batch = NA, 
+             ncomp = 3, 
+             keepXs = c(50,50,50), 
+             keepY = c(100,100,50))
+             
+```
+
+Visualise
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/viz_mint.block.R")
+
+viz_mint_block(input.file = "2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds",
+               meta.data = "./2_results/scNMT/NMT/cell_metadata.tsv",
+               output.folder = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/",
+               plot.width = 16,
+               plot.height = 16,
+               plot.alpha = 0.8,
+               treatment_colours = c("AZA" =  "#619CFF", "DAC"  = "#F8766D"),
+               batch_colours = c("b320" =  "#F8766D", "b620"  = "#00BA38", "b322" = "#619CFF") # This also decides the order
+               )          
+
+```
+
+## Viz spls comps
+
+### Met {.tabset .unnumbered}
+
+#### PCA 1-2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/met-comps12.png')
+```
+
+#### PCA 1-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/met-comps13.png')
+```
+
+#### PCA 2-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/met-comps23.png')
+```
+
+### Acc {.tabset .unnumbered}
+
+#### PCA 1-2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/acc-comps12.png')
+```
+
+#### PCA 1-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/acc-comps13.png')
+```
+
+#### PCA 2-3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/acc-comps23.png')
+```
+
+
+### RNA w/Global Met level {.unnumbered}
+
+```{R, warnings='hide', eval=!!FALSE}
+
+
+
+
+```
+
+
+## Obtain metadata for selected features {.unnumbered}
+
+Obtain metadata for selected features.
+
+```{R, warnings='hide', eval=!!FALSE}
+# Also saved into the R script file:
+## source("A:/sean_Burnard/1_Projects/HMA_Heterogeneity/scripts/scNMT/in_dev/spls_obtain_selected_features_metadata.R") 
+
+if(!require(pacman)){install.packages("pacman");require(pacman)}
+pacman::p_load(mixOmics,ggplot2,clusterProfiler,enrichplot, dplyr, MultiAssayExperiment, SummarizedExperiment, MatrixGenerics, matrixStats,
+               knitr, SingleCellExperiment, rlang, Seurat, gsubfn, data.table, cowplot, gridExtra, grid, tibble)
+
+input.spls.file =  './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds'
+#MAE.file <- 
+input.RNA.file = "./2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs_sce.rds"
+NOMeSeq_rowRanges.file = './2_results/scNMT/NOMeSeq/NOMeSeq_MAE_rowRanges_Key.txt'
+output.file.name = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/spls_selected_features_metadata.rds'
+output.file.name.csv = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/spls_selected_features_metadata.csv'
+
+spls.model <- readRDS(input.spls.file)
+sce_seurat <- readRDS(input.RNA.file)
+NOMeSeq_rowRanges <- fread(NOMeSeq_rowRanges.file)
+
+selected_features_df_all <- NULL
+
+for (comp_n in c(1,2)){
+  spls.model.selected <- selectVar(spls.model, comp = comp_n)
+
+  for(n in names(spls.model.selected)[!grepl("comp", names(spls.model.selected))]){ # Loop and ignore 'comp'
+    selected_features_df <- data.frame(block_name = rep(n, nrow(as.data.frame(spls.model.selected[n]))),
+                                       feature_ID = spls.model.selected[[n]][['name']],
+                                       loading_value = spls.model.selected[[n]][['value']][['value.var']],
+                                       comp = rep(spls.model.selected[['comp']], nrow(as.data.frame(spls.model.selected[n]))))
+  
+    selected_features_df_all <- rbind(selected_features_df_all, selected_features_df)
+  }
+}
+
+NOMeSeq_rowRanges$context_ID <- as.character(NOMeSeq_rowRanges$context_ID)
+selected_features_df_all <- left_join(selected_features_df_all, NOMeSeq_rowRanges, by = c("block_name" = "context", "feature_ID" = "context_ID"))
+
+# Obtain RNA meta data
+RNA_metadata <- rowData(sce_seurat) %>% 
+  as.data.frame(.) %>% 
+  rownames_to_column(var = "ensembl_ID") %>%
+  mutate(feature_ID = ensembl_ID) %>%
+  dplyr::select(feature_ID, chr = Chromosome, start = Start, end = End, width = Length, strand = Strand, ensembl_ID, hgnc.TE, Type,  gene.class)
+
+# Update only selected RNA block (and combined after)
+RNA_block_updated <- 
+selected_features_df_all %>% 
+  filter(block_name == "Y") %>% 
+  dplyr::select(block_name, feature_ID, loading_value,comp) %>%
+  left_join(RNA_metadata, by= c("feature_ID" = "feature_ID")) %>%
+  mutate(block_name = gsub('Y', 'rna', block_name))
+
+# Combine udpated RNA with (and replaced it in) selected_feature_df_all
+selected_features_df_all_updated <- 
+  selected_features_df_all %>% 
+  filter(block_name != "Y") %>% 
+  mutate(hgnc.TE = NA, Type = NA,  gene.class = NA) %>%
+  rbind(.,RNA_block_updated) 
+
+# Save
+saveRDS(selected_features_df_all_updated, file = output.file.name)
+write.csv(selected_features_df_all_updated, file = output.file.name.csv, row.names = F)
+
+```
+
+## ORA - spls comps {.tabset}
+
+Get background list
+
+```{R, warnings='hide', eval=!!FALSE}
+
+input.RNA.sce = "A:/sean_Burnard/1_Projects/HMA_Heterogeneity/2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs_sce.rds"
+output.file.name <- "./2_results/scNMT/NMT/Autosomal/NMT_MAE-Autosomal-RNA_background_list.rds"
+chr.to.keep.RNA <- c(1:22, NA)
+
+rna <- readRDS(input.RNA.sce)
+
+  if(FALSE == is.null(chr.to.keep.RNA)){
+    cat("\nFiltering input.RNA.sce to keep genes only on chromosomes: \n",chr.to.keep.RNA)
+    
+    rna <- rna[rowData(rna)$Chromosome %in% chr.to.keep.RNA,]
+  }
+
+backround.genes <- rownames(rna)
+
+saveRDS(backround.genes, file = output.file.name)
+
+```
+
+### C1-2 {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_GO.R")
+
+spls_GO(input.spls.file= './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds', 
+        comps.to.include = c(1,2), # default will be all. Otherwise specify using a vector 'c(1,2)')
+        input.file.background = './2_results/scNMT/NMT/Autosomal/NMT_MAE-Autosomal-RNA_background_list.rds',
+        output.file.dir = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/', # Where the GO results table will go
+        output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/',
+        p.adj.method = "fdr",
+        plot.key.colour = "p.adjust",
+        enrichGO.ontology = "BP",
+        p.adj.threshold = 0.05, # Default 'always' being 0.05
+        q.val.threshold = 0.4,
+        output.extension.name = "C1-2",
+        figure.extension = "png")          
+
+```
+
+#### dotplot {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_dotplot_C1-2.png')
+```
+
+#### treeplot 1 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_1_C1-2.png')
+```
+
+#### treeplot 2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_2_C1-2.png')
+```
+
+#### treeplot 3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_3_C1-2.png')
+```
+
+#### treeplot 4 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_4_C1-2.png')
+```
+
+### C1 {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_GO.R")
+
+spls_GO(input.spls.file= './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds', 
+        comps.to.include = 1, # default will be all. Otherwise specify using a vector 'c(1,2)')
+        input.file.background = './2_results/scNMT/NMT/Autosomal/NMT_MAE-Autosomal-RNA_background_list.rds',
+        output.file.dir = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/', # Where the GO results table will go
+        output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/',
+        p.adj.method = "fdr",
+        plot.key.colour = "p.adjust",
+        enrichGO.ontology = "BP",
+        p.adj.threshold = 0.05, # Default 'always' being 0.05
+        q.val.threshold = 0.4,
+        output.extension.name = "C1",
+        figure.extension = "png") 
+
+```
+
+#### dotplot {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_dotplot_C1.png')
+```
+
+#### treeplot 1 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_1_C1.png')
+```
+
+#### treeplot 2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_2_C1.png')
+```
+
+#### treeplot 3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_3_C1.png')
+```
+
+#### treeplot 4 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/EnrichGo_Tree_plot_4_C1.png')
+```
+
+### C2 {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_GO.R")
+
+spls_GO(input.spls.file= './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds', 
+        comps.to.include = 2, # default will be all. Otherwise specify using a vector 'c(1,2)')
+        input.file.background = './2_results/scNMT/NMT/Autosomal/NMT_MAE-Autosomal-RNA_background_list.rds',
+        output.file.dir = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/', # Where the GO results table will go
+        output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/GO/',
+        p.adj.method = "fdr",
+        plot.key.colour = "p.adjust",
+        enrichGO.ontology = "BP",
+        p.adj.threshold = 0.05, # Default 'always' being 0.05
+        q.val.threshold = 0.4,
+        output.extension.name = "C2",
+        figure.extension = "png")          
+
+```
+## plotVar (correlation circle plot) {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_plotVar.R")
+
+spls_plotVar(input.spls.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+             comps.to.include = c(1,2), # default will be all. Otherwise specify using a vector 'c(1,2)')
+             output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/plotVar_corr_circle/', 
+             cutoff = 0.5,
+             legend = TRUE,
+             var.names = F,
+             plot.title = NULL, # default is 'Correlation Circle Plot'
+             plot.title = "Correlation Circle Plot - comp 1-2")
+
+
+```
+
+### plotVar v1 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/plotVar_corr_circle/spls_plotVar_V1.png')
+```
+
+### plotVar v2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/plotVar_corr_circle/spls_plotVar_V2.png')
+```
+
+### plotVar default cols {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/plotVar_corr_circle/spls_plotVar_defaultCol.png')
+```
+
+## Circos
+
+### Initial plots {.tabset .unnumbered}
+Plotting using both components to visualise and obtain underlying similarity matrix across all selected features in comps 1 and 2.
+
+#### Plot {.unnumbered}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_Circos_corr.R")
+# r = 0.6
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.6_C1-2.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.6,
+            comps.to.include = c(1,2),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+
+# r = 0.5
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.5_C1-2.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.5,
+            comps.to.include = c(1,2),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+
+# r = 0.4
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.4_C1-2.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.4,
+            comps.to.include = c(1,2),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+```
+
+#### Save correlation matrix {.unnumbered}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_Circos_corr.R")
+spls_Circos_cor_mat(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+                    meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+                    output.file.dir = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+                    output.file.name = "circos_mat_C1-2.tsv",
+                    corr.cutoff = 1, # Currently this is permanently set to 1. Because plotting is automatic but not saved, and lower thresholds with more connections slows down the process. Future versions will apply a pre-filtered table using this threshold if specified!
+                    comps.to.include = c(1,2),
+                    blocks.to.include = NULL)
+
+```
+
+#### Obtain metadata for selected features {.unnumbered}
+
+Obtain metadata for selected features.
+
+```{R, warnings='hide', eval=!!FALSE}
+# Also saved into the R script file:
+## source("A:/sean_Burnard/1_Projects/HMA_Heterogeneity/scripts/scNMT/in_dev/spls_obtain_selected_features_metadata.R") 
+
+if(!require(pacman)){install.packages("pacman");require(pacman)}
+pacman::p_load(mixOmics,ggplot2,clusterProfiler,enrichplot, dplyr, MultiAssayExperiment, SummarizedExperiment, MatrixGenerics, matrixStats,
+               knitr, SingleCellExperiment, rlang, Seurat, gsubfn, data.table, cowplot, gridExtra, grid, tibble)
+
+input.spls.file =  './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds'
+#MAE.file <- 
+input.RNA.file = "./2_results/scNMT/RNAseq/Batch_Correction/Seurat/Seurat4_NAs_sce.rds"
+NOMeSeq_rowRanges.file = './2_results/scNMT/NOMeSeq/NOMeSeq_MAE_rowRanges_Key.txt'
+output.file.name = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/spls_selected_features_metadata.rds'
+output.file.name.csv = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/spls_selected_features_metadata.csv'
+
+spls.model <- readRDS(input.spls.file)
+sce_seurat <- readRDS(input.RNA.file)
+NOMeSeq_rowRanges <- fread(NOMeSeq_rowRanges.file)
+
+selected_features_df_all <- NULL
+
+for (comp_n in c(1,2)){
+  spls.model.selected <- selectVar(spls.model, comp = comp_n)
+
+  for(n in names(spls.model.selected)[!grepl("comp", names(spls.model.selected))]){ # Loop and ignore 'comp'
+    selected_features_df <- data.frame(block_name = rep(n, nrow(as.data.frame(spls.model.selected[n]))),
+                                       feature_ID = spls.model.selected[[n]][['name']],
+                                       loading_value = spls.model.selected[[n]][['value']][['value.var']],
+                                       comp = rep(spls.model.selected[['comp']], nrow(as.data.frame(spls.model.selected[n]))))
+  
+    selected_features_df_all <- rbind(selected_features_df_all, selected_features_df)
+  }
+}
+
+NOMeSeq_rowRanges$context_ID <- as.character(NOMeSeq_rowRanges$context_ID)
+selected_features_df_all <- left_join(selected_features_df_all, NOMeSeq_rowRanges, by = c("block_name" = "context", "feature_ID" = "context_ID"))
+
+# Obtain RNA meta data
+RNA_metadata <- rowData(sce_seurat) %>% 
+  as.data.frame(.) %>% 
+  rownames_to_column(var = "ensembl_ID") %>%
+  mutate(feature_ID = ensembl_ID) %>%
+  dplyr::select(feature_ID, chr = Chromosome, start = Start, end = End, width = Length, strand = Strand, ensembl_ID, hgnc.TE, Type,  gene.class)
+
+# Update only selected RNA block (and combined after)
+RNA_block_updated <- 
+selected_features_df_all %>% 
+  filter(block_name == "Y") %>% 
+  dplyr::select(block_name, feature_ID, loading_value,comp) %>%
+  left_join(RNA_metadata, by= c("feature_ID" = "feature_ID")) %>%
+  mutate(block_name = gsub('Y', 'rna', block_name))
+
+# Combine udpated RNA with (and replaced it in) selected_feature_df_all
+selected_features_df_all_updated <- 
+  selected_features_df_all %>% 
+  filter(block_name != "Y") %>% 
+  mutate(hgnc.TE = NA, Type = NA,  gene.class = NA) %>%
+  rbind(.,RNA_block_updated) 
+
+# Save
+saveRDS(selected_features_df_all_updated, file = output.file.name)
+write.csv(selected_features_df_all_updated, file = output.file.name.csv, row.names = F)
+
+```
+
+
+### Comp1 
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_Circos_corr.R")
+# r = 0.7
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.7_C1.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.7,
+            comps.to.include = c(1),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+# r = 0.6
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.6_C1.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.6,
+            comps.to.include = c(1),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+# r = 0.5
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.5_C1.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.5,
+            comps.to.include = c(1),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+```
+
+### Comp2 
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/scNMT/in_dev/spls_Circos_corr.R")
+
+# r = 0.7
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.7_C2.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.7,
+            comps.to.include = c(2),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+
+# r = 0.6
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.6_C2.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.6,
+            comps.to.include = c(2),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+
+# r = 0.5
+spls_Circos(input.file = './2_results/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/mint.block.spls_NA_rna_rna_pctCells_10_nhvrs_0_ncomps_3_mode_canonical.rds',
+            meta.data.file = "./2_results/scNMT/NMT/cell_metadata.tsv",
+            output.fig.dir = './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/circos/',
+            output.fig.name = 'circos_r0.5_C2.pdf',
+            store.cor.mat = NULL, # Currently not used. In future - If 'Y', specify output.file.dir, if different from the dir used for the input.file. It will ignore corr.cutoff threshold to speed up calc.
+            output.file.dir = NULL, # Not used currently
+            output.file.cor.mat = NULL, # Not used currently
+            corr.cutoff = 0.5,
+            comps.to.include = c(2),
+            blocks.to.include = NULL, # specify blocks in a vector if only a subset is required from the spls model.
+            width = 9,
+            height = 9)
+```
+
+## Heatmap spls selected features
+
+First need to obtain averages across all blocks (updating cell metadata file)
+
+```{R, warnings='hide', eval=!!FALSE}
+# source("./scripts/scNMT/cell_metadata-add_block_averages.R") 
+```
+
+```{R, warnings='hide', eval=!!FALSE}
+# source("./scripts/scNMT/in_dev/spls_heatmap_all_selected_features_v14.R") 
+```
+
+Figures (pdf) can be found in: './figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/*.pdf'
+
+
+
+## GO ORA - heatmap RNA Kmeans clusters {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/GO_analysis_and_plotting.R")
+
+ensembl_hit_list_file = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/Heatmap_NMT_C1-2_RNA_rowKmeans3_colKmeans4-ClusterIDs_GENES.csv"
+background_list_file = "./2_results/scNMT/NMT/Autosomal/NMT_MAE-Autosomal-RNA_background_list.rds"
+
+# Read in files
+ensembl_hit_list <- fread(ensembl_hit_list_file)
+background_list <- readRDS(background_list_file)
+
+# Update IDs in ensembl hit list and filter
+ensembl_hit_list_cluster1 <- ensembl_hit_list %>% filter(cluster == 1) %>% .[["ensembl_ID"]]
+ensembl_hit_list_cluster2 <- ensembl_hit_list %>% filter(cluster == 2) %>% .[["ensembl_ID"]]
+ensembl_hit_list_cluster3 <- ensembl_hit_list %>% filter(cluster == 3) %>% .[["ensembl_ID"]]
+
+Perform_Go_and_plot(ensembl.hit.list = ensembl_hit_list_cluster1, # Needs to be a vector. If this is saved in another file, please extract the list/column and make it a vector.
+                    background.list = background_list, # Needs to be a vector.
+                    p.adj.method = "fdr", # Can be "none", "fdr","bh" etc
+                    p.adj.threshold = 0.05, # Default 'always' being 0.05
+                    q.val.threshold = 0.4,
+                    enrichGO.ontology = "BP",
+                    plot.key.colour = "p.adjust", # Can be 'p.adjust', 'pvalue' or 'qvalue',
+                    show.Category = 16,
+                    output.fig.dir = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/",
+                    output.file.dir = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/",
+                    output.extension.name = "C1", # This can be left blank with "", and all plots will remain with their basic names.
+                    figure.extension = c("svg"))
+
+
+Perform_Go_and_plot(ensembl.hit.list = ensembl_hit_list_cluster2, # Needs to be a vector. If this is saved in another file, please extract the list/column and make it a vector.
+                    background.list = background_list, # Needs to be a vector.
+                    p.adj.method = "fdr", # Can be "none", "fdr","bh" etc
+                    \p.adj.threshold = 0.05, # Default 'always' being 0.05
+                    q.val.threshold = 0.4,
+                    enrichGO.ontology = "BP",
+                    plot.key.colour = "p.adjust", # Can be 'p.adjust', 'pvalue' or 'qvalue'
+                    show.Category = 16,
+                    output.fig.dir = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/",
+                    output.file.dir = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/",
+                    output.extension.name = "C2", # This can be left blank with "", and all plots will remain with their basic names.
+                    figure.extension = c("png"))
+
+Perform_Go_and_plot(ensembl.hit.list = ensembl_hit_list_cluster3, # Needs to be a vector. If this is saved in another file, please extract the list/column and make it a vector.
+                    background.list = background_list, # Needs to be a vector.
+                    p.adj.method = "fdr", # Can be "none", "fdr","bh" etc
+                    p.adj.threshold = 0.05, # Default 'always' being 0.05
+                    q.val.threshold = 0.4,
+                    enrichGO.ontology = "BP",
+                    plot.key.colour = "p.adjust", # Can be 'p.adjust', 'pvalue' or 'qvalue'
+                    show.Category = 16,
+                    output.fig.dir = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/",
+                    output.file.dir = "./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/",
+                    output.extension.name = "C3", # This can be left blank with "", and all plots will remain with their basic names.
+                    figure.extension = c("svg"))
+
+
+```
+
+
+
+
+### C1 {.tabset .unnumbered}
+
+#### dotplot {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_dotplot_C1.png')
+```
+
+#### treeplot 1 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_1_C1.png')
+```
+
+#### treeplot 2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_2_C1.png')
+```
+
+#### treeplot 3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_3_C1.png')
+```
+
+#### treeplot 4 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_4_C1.png')
+```
+
+### C2 {.unnumbered}
+Nothing made P.adj... Top hits were:   
+
+ID	Description	GeneRatio	BgRatio	pvalue	p.adjust	qvalue	geneID	Count
+
+* GO:1903202	negative regulation of oxidative stress-induced cell death	4//76	16//4217	0.000150493	0.116870932	0.112321384	BAG5/SLC7A11/NCOA7/SIRT1	4
+* GO:0036473	cell death in response to oxidative stress	5//76	32//4217	0.000229281	0.116870932	0.112321384	BAG5/SLC7A11/NCOA7/JAK2/SIRT1	5
+* GO:0050804	modulation of chemical synaptic transmission	7//76	72//4217	0.000269288	0.116870932	0.112321384	SLC7A11/CNR2/PACSIN2/JAK2/EGR2/KAT2A/RGS14	7
+
+
+### C3 {.tabset .unnumbered}
+
+#### dotplot {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_dotplot_C3.png')
+```
+
+#### treeplot 1 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_1_C3.png')
+```
+
+#### treeplot 2 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_2_C3.png')
+```
+
+#### treeplot 3 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_3_C3.png')
+```
+
+#### treeplot 4 {.unnumbered}
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/ORA/EnrichGo_Tree_plot_4_C3.png')
+```
+
+
+## spls projections with heatmap clusters {.tabset}
+
+```{R, warnings='hide', eval=!!FALSE}
+source("A:/sean_Burnard/1_Projects/HMA_Heterogeneity/scripts/scNMT/in_dev/spls_viz_pca-heatmap_clusters.R")
+
+```
+
+### RNA
+
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/spls_comps/rna-heatmap_Kmeans4.png')
+```
+
+### Met
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/spls_comps/Met_combined_plots-heatmap_Kmeans4.png')
+```
+
+### Acc
+```{r, results=params$fig.results}
+include_graphics('./figures/scNMT/NMT/Autosomal/pct10_Y100-100_Tx_only/heatmap/spls_comps/Acc_combined_plots-heatmap_Kmeans4.png')
+```
+
+

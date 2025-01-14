@@ -1,0 +1,894 @@
+---
+title: |
+  <p style="color:purple; text-align:center"> **HMA colony analysis** </p>
+  <center> **MOLM** </centre>
+  <p style="text-align:center; font-size:32px"> Colony data only </p>
+
+author: "Sean Burnard"
+email: "sean.burnard@newcastle.edu.au"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+params:
+  fig.results: 'asis'
+  shape: 16
+  alpha: 0.75
+  eval.fig: TRUE
+  echo.fig: FALSE
+  eval.run.analysis: FALSE
+output:   
+  html_document:
+    number_sections: TRUE
+    toc: TRUE
+    toc_float:
+      toc_collapsed: FALSE
+    toc_depth: 4
+    css: style.css
+---
+
+This report is only on the colony data (RNA-seq + TEM-seq) analysis for MOLM-13.
+
+
+---
+
+# Prepocessing steps
+
+1. Fastq read pair lanes were merged, and then read pairs were trimmed using trimgalore.
+2. Aligned **.bam** files were generated using Hisat2, retaining ambiguous/ multi-mapping reads.
+3. TEtranscripts was used to generate count tables:
+   + TEtranscripts: TEcount --sortByPos --mode multi --TE {TE_GTF} --GTF {Genome_GTF} --project {params.project} -b {input} 2>{output.log}
+   + N.B. TEtranscripts was run using the gene reference and TE annotation files from scTE (removing the Chr#'s to allow it to run with TEtranscripts). This was to allow for a more 'up to date' TE reference build to be used (as TEtranscripts was first made back in 2012)
+      + TE_GTF: GTF_files/scTE_annos/scTE_hg38_rmsk_TE_NoChr.gtf
+      + Genome_GTF: GTF_files/scTE_annos/gencode.v30.annotation_MT_noChr_corrected.gtf   
+4. Individual (sample) count tables were then merged into a single 'Merged.cntTable'.
+5. This report continues the analysis using the 'Merged.cntTable' output.
+
+---
+
+```{r setup}
+library(knitr)
+```
+
+## Creation of gene information and ID conversion (hgnc and ensembl) table.
+This is based directly on the annotation (GTF) file used
+The output of TEtranscripts is ensembl ID and counts. Therefore, this table provides a way to update the output with the information already contained within the gene GTF file (annotation file) used in the TEtranscripts run. This code was based on https://www.biostars.org/p/140471/
+
+| For gencode: https://www.gencodegenes.org/pages/data_format.html
+* select mouse or human and 'recent relase' (for latest) or 'release history' for older
+* Download GTF file for 'Comprehensive gene annotation' (regions = CHR) OR right click and 'save the link address' then use wget.
+
+| For ensembl: https://asia.ensembl.org/info/data/ftp/index.html
+* Find your species of interest.
+* Click the corresponding GTF file under 'Gene Sets'
+* Download either the '.chr.gtf.gz' or full release (no 'chr' in the name and just the release number  i.e. 'GRCh38.104.gtf.gz')
+
+N.B. These should be the same gene GTF files used in the TEtranscripts step!
+
+
+```{r Create_annotation_table, echo = TRUE, eval = FALSE}
+
+library(rtracklayer)
+library(dplyr)
+library(readr)
+
+# Version 1 (gencode)
+GTF_file <- "./scripts/annos/GTF_files/genes/gencode.v30.annotation_MT_noChr_corrected.gtf" #v2 was using gencode.v30.annotation_NoChr.gtf (only minor update - 'MT' name)
+newGTF <- import(GTF_file)
+newGTF2 <- as.data.frame(newGTF)
+# Extract only genes and export standardised table (used for downstream analysis)
+newGTF2 <- newGTF2 %>% 
+        filter(type == "gene") %>% 
+        dplyr::select(Geneid = gene_id, GeneSymbol = gene_name, 
+        Chromosome = seqnames, Start = start, End = end, 
+        Class = gene_type, Strand = strand, Length = width) %>%
+        mutate(Chromosome = gsub("chr", "", Chromosome)) ## Removes 'chr' in case GTF file was from ensembl (and not already removed)
+
+write_tsv(newGTF2, file = "./scripts/annos/gencode.v30_gene_annotation_table3.txt")
+
+
+```
+
+
+
+## Update cntTable(s)
+
+This chunk takes a while due to the slow import of the merged count tables (particularly for larger files like the colony dataset).
+```{r Update_Merged.CntTables, echo = TRUE, eval = FALSE}
+
+source("./scripts/TEtranscripts_Update_and_standardise_output_table.R")
+
+## MOLM colony update
+update_table(data = "./1_data/colony/MOLM/TEtranscripts/TEtranscripts_Merged.cntTable", 
+             anno_file = "./scripts/annos/gencode.v30_gene_annotation_table3.txt", 
+             output.dir = "./2_results/colony/MOLM",
+             output.appendix = "")
+
+
+```
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Colony QC
+
+## Create colony SCE 
+
+This is currently only written to work with the colony data, to produce a saved sce object (stored in an R object), which also contains associated metadata for genes/ TEs and samples.
+```{r, echo = F, eval = F, warning=F, message = F}
+source("./scripts/Create_sce_from_TEtranscritps_raw_counts.R")
+
+create_sce_colonies(
+  input.counts = "./2_results/colony/MOLM/TE_and_gene_counts_Updated_and_Raw.txt",
+  sample.sheet = "./1_data/colony/MOLM/Sample_analysis_sheet.csv",
+  output.directory =  "./2_results/colony/MOLM")
+
+
+```
+
+Add Semqonk QC into sce (if available). This will update sce object metadata, and the meta data tsv file (located in the output.directory)  
+
+```{r, echo = T, eval = F, warning=F, message = F}
+#Don't need to run this if it was already run in the QC index. Provided here for reference (or if it needs to be 're-run')
+
+source("./scripts/QC_seqmonk_sample_filtering_function.R")
+Sample_QC_filter(QC.file = "./2_results/colony/QC/QC_stats_seqmonk_hisat2_summarised_ALL_colonies.csv",
+                 cell = "MOLM",
+                 overall.alignment.rate.threshold = 0,
+                 Percent.Genes.Measured.threshold = 35,
+                 Percent.in_exons.threshold = 70,
+                 output.folder = "./2_results/colony/MOLM/QC")
+```
+
+```{r, echo = T, eval = F, warning=F, message = F}
+
+source("./scripts/create_sce_add_seqmonk_QC.R")
+
+create_sce_add_seqmonk_qc(
+  input.sce = "./2_results/colony/MOLM/sce.rds",
+  seqmonk.QC.passing = "./2_results/colony/MOLM/QC/Samples_passing_QC.txt",
+  output.directory =  "./2_results/colony/MOLM")
+
+
+```
+
+
+
+## Initial QC (QC1)
+
+This is to run the QC and filtering script:
+
+```{r, echo = T, eval = F, warning=F, message = T}
+# This includes initial QC and secondary filtered QC
+
+source("./scripts/Perform_sce_QC_and_filter-seqmonk_based.R")
+
+perform_QC_seqmonk_based(input.file = "2_results/colony/MOLM/sce.rds",
+                         output.file.dir = '2_results/colony/MOLM',
+                         output.fig =  'figures/colony/MOLM/QC',
+                         min.counts = 5,
+                         min.cells = 3)
+
+```
+
+The initial QC is utilising the scran::scater() package.
+
+### QC overview {.tabset}
+There is clear difference in library size between the three packages, with rep 2 and 3, showing a minor secondary peak with a low library size.
+| This is further highlighted in the second plot, with both rep 2 and 3 having several cells with few 'features detected'.
+
+#### Density plot
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/Colony_QC1-libsizes.png')
+```
+
+#### Library size vs Features + Batch and % Mito
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/Colony_QC1-scatter.png')
+```
+
+### Inidividual QC plots
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/colony_QC1-combined.png')
+```
+
+### PCA
+On the PCA plot, a third group separated on PC2 appears to be driven by the 'number of unique gene features', with all cells in this separate cluster having the lowest number of genes. Therefore, these cells with be filtered out.
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/colony_QC1-PCA.png')
+```
+
+
+## Filtered/ secondary QC (QC2)
+
+Samples are filtered based on the results from the seqmonk QC (see colony_QC markdown) that produced a list of samples passing QC. Then genes/TEs are filter for above thresholds to remove missing/lowly expressed genes, by requiring x amount of reads in at least Y cells/samples.
+
+### Inidividual QC plots
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/colony_QC2-combined.png')
+```
+
+### PCA
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/colony_QC2-PCA.png')
+```
+
+### PCA gene and TE features separately
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/colony_QC2-PCA-Genes_TEs_separate.png')
+```
+
+
+### Comparing Variables explained from initial and filtered dataset
+
+scater can also compute the marginal R2 for each variable when fitting a linear model regressing expression values for each gene against just that variable, and display a density plot of the gene-wise marginal R2 values for the variables.
+| Each line corresponds to one factor and represents the distribution of R2 values across all genes. The factors being regressed/ plotted are ranked, so the 'top' factor in the legend is the one that explains 'the most' amount of variance in the dataset
+
+```{r, echo = params$echo.fig, out.width='100%', output.height="100%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/MOLM/QC/colony_QC1.2-explanatoryvariables.png')
+```
+
+Here, we can see 'batch' accounts for more variance in expression than treatment in both the initial QC and post filtering. After filtering, number of genes and TEs detected and batch still explain the highest amounts of variance. The subset of mitochondria explains the least amount of variance across this data. Therefore, batch correction needs to applied.
+
+
+
+
+# Batch Correction
+
+## Per batch normalisation {.tabset}
+First exploring how the data looks within each individual batch. This will help assess the potential challenges and success of batch correction.
+
+### QC1 {.unnumbered}
+This is using the 'raw' data (pre-filtered)
+
+(Running from NOMeSeq directory.) 
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/per_batch_normalisation_v3.R")
+
+per_batch_normalisation(input.file = "./2_results/colony/MOLM/sce_qc1.rds",
+                        output.file = "./2_results/colony/MOLM/Batch_Correction/sce_qc1_UniBatchNorm.rds",
+                        output.fig.dir = 'figures/colony/MOLM/Batch_Correction/',
+                        per.batch = FALSE # If false, it performs scuttle:logNormalise() for the combined batches but still performs runPCA on the batches separately after.
+                        )
+
+```
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/viz_per_batch_normalisation.R")
+
+
+viz_per_batch_normalisation(output.file = './2_results/colony/MOLM/Batch_Correction/sce_qc1_UniBatchNorm.rds', # output RDS path to save the data
+                            output.fig = 'figures/colony/MOLM/Batch_Correction/', # output folder for figures
+                            output.fig.name = "QC1_Norm_PCA_PerBatch.png", # output name for figures
+                            reducedDim = "PCA.batch",
+                            shape = 1,
+                            size = 3,
+                            width = 8,
+                            height = 4,
+                            all_cols = c("unt" = "green", "aza" =  "blue", "dac"  = "red") # Change as required for your batch c("rep_name1" = "colour1, "rep_name2 = "colour2")
+                            )
+```
+
+### QC2 {.unnumbered}
+This is using the post-filtered data.
+
+(Running from NOMeSeq directory.)
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/per_batch_normalisation_v3.R")
+
+per_batch_normalisation(input.file = "./2_results/colony/MOLM/sce_qc2.rds",
+                        output.file = "./2_results/colony/MOLM/Batch_Correction/sce_qc2_UniBatchNorm.rds",
+                        output.fig.dir = 'figures/colony/MOLM/Batch_Correction/',
+                        per.batch = FALSE # If false, it performs scuttle:logNormalise() for the combined batches but still performs runPCA on the batches separately after.
+                        )
+
+```
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/viz_per_batch_normalisation.R")
+
+
+viz_per_batch_normalisation(output.file = './2_results/colony/MOLM/Batch_Correction/sce_qc2_UniBatchNorm.rds', # output RDS path to save the data
+                            output.fig = 'figures/colony/MOLM/Batch_Correction/', # output folder for figures
+                            output.fig.name = "QC2_Norm_PCA_PerBatch.png", # output name for figures
+                            reducedDim = "PCA.batch",
+                            shape = 1,
+                            size = 3,
+                            width = 8,
+                            height = 4,
+                            all_cols = c("unt" = "green", "aza" =  "blue", "dac"  = "red") # Change as required for your batch c("rep_name1" = "colour1, "rep_name2 = "colour2")
+                            )
+```
+
+## Per batch PCA {.tabset}
+| QC1 = no samples or genes filtered. QC2 = filtered samples and missing genes. Both PCA plots are logNormalised.   
+| Normalisation was done with all reps combined, but PCA plots are displayed with replicates individually to make it easier to appreciate the spread of samples by treatment in each replicate and how sample + gene filtering changes the PCAs. This is also important to keep in mind prior to batch correction (and help avoid 'over-correction').
+
+### QC1 ('raw')
+
+```{r, fig.cap='scRNAseq PCA on each batch separately', fig.align='center', out.width='100%', results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Batch_Correction/QC1_Norm_PCA_PerBatch.png')
+```
+
+### QC2 (post filtering)
+
+```{r, fig.cap='scRNAseq PCA on each batch separately', fig.align='center', out.width='100%', results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Batch_Correction/QC2_Norm_PCA_PerBatch.png')
+```
+
+
+
+## MNN correction {.tabset}
+
+<br><br>
+`r kableExtra::text_spec("MNN tries to identify pairs of mutual nearest neighbors (MNN) in the high-dimensional log-expression space. Each MNN pair represents cells in different batches that are of the same cell type/state, assuming that batch effects are mostly orthogonal to the biological manifold. Correction vectors are calculated from the pairs of MNNs and corrected (log-)expression values are returned", color = "darkorange", bold=TRUE)`
+<br><br>
+
+Apply MNN on logcounts to correct for batch effects using all of the genes. Add the corrected logcounts to the SCE. Create and save PCA plots coloured by treatment and batch.
+
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/batch_correction_MNN.R")
+
+batch_correction_mnn(input.file = "./2_results/colony/MOLM/Batch_Correction/sce_qc2_UniBatchNorm.rds", 
+                                 output.file = "./2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect.rds",
+                                 assay.name = "mnnCorrected",
+                                 nhvgs = 5000,
+                                 force = FALSE)
+
+```
+
+```{R viz scRNAseq-mnn, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/viz_batch_normalisation.R")
+
+viz_batch_normalisation(output.file = "./2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect.rds", # output RDS path to save the data
+                                        output.fig = 'figures/colony/MOLM/Batch_Correction/', # output folder for figures
+                                        output.fig.name = "PCA_mnnCorrected.png", # output name for figures
+                                        shape = "Batch",
+                                        size = 3,
+                                        width = 12,
+                                        height = 8,
+                                        all_cols = c("unt" = "green", "aza" =  "blue", "dac"  = "red"), # Change as required for your batch c("rep_name1" = "colour1, "rep_name2 = "colour2")
+                                        reducedDim = 'PCA_mnnCorrected')
+                            
+                            
+```
+
+
+```{R, warnings='hide', eval=!!FALSE}
+source("./scripts/converted_from_HPC/viz_variance_explained.R")
+
+
+viz_variance_explained(sce.rds = c("./2_results/colony/MOLM/Batch_Correction/sce_qc1_UniBatchNorm.rds", 
+                                   "./2_results/colony/MOLM/Batch_Correction/sce_qc2_UniBatchNorm.rds",
+                                   "./2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect.rds",
+                                   "./2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect.rds"),
+                      exprs.values.name = c("counts","counts", "logcounts", "mnnCorrected"), # Needs to be the same length as the number of sce.rds files.
+                      plot.names = c("Raw data (QC1)", "QC filtered (QC2)", "QC2 + Norm", "MNN corrected"),
+                      variables.to.measure = c("total", "Batch", "Treatment", "subsets_Gene_detected", "subsets_TE_detected", "subsets_Mito_detected"),
+                      
+                      output.file.dir = "figures/colony/MOLM/Batch_Correction",
+                      output.file.name = "ExplanatoryVariables-mnncorrected.png")
+                            
+```
+
+
+
+
+### MNN Correction 
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Batch_Correction/PCA_mnnCorrected.png')
+```
+
+### Without MNN correction
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/QC/colony_QC2-PCA.png')
+```
+
+### Explanatory Variables
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Batch_Correction/ExplanatoryVariables-mnnCorrected.png')
+```
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# MOLM colony methlyation levels {.tabset}
+
+Plotting the methylation levels of colonies passing QC to identify an appropriate level/cut-off for 'methylation retaining' treated colonies (high methylation) relative to untreated colonies.
+
+
+
+```{r Methlation_batch_plotting, echo = FALSE, eval = FALSE}
+
+
+source("./scripts/Plot_methylation_levels.R")
+
+plot_MeanMeth(meta.data.tsv = "./2_results/colony/MOLM/cell_metadata.tsv",
+              output.dir ="figures/colony/MOLM",
+              Methylation.cut.off = 75,
+              Passing.QC.only = "TRUE" # If 'FASE' this will plot all samples.
+              )
+
+
+```
+
+Using a cut-off at 75% for 'methylation retaining' seems appropriate when comparing batches independently and combined.
+
+## By batch
+
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Colony_methylation_levels_by_batches_and_Tx.png')
+```
+
+## Combined
+
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Colony_methylation_levels_combined_batches.png')
+```
+
+# HVGs
+
+Using mnnCorrected data which is the 'most consistent' across all three cell lines... (Albeit not optimal for each). The following steps are performed:
+
+1. Filter for mnnCorrected matrix.
+2. Remove MT genes. (genes lowly expressed are already removed in the initial QC filtering).
+3. Heatmap showing individual sample expression (not averaged across treatment groups) with:
+   - samples ordered by methylation level or hierarchical clustering.
+   - Genes individually shown with hierarchical clustering or groups with k-means clustering.
+
+
+## Identify HVGs and plot PCA {.tabset}
+
+Here, the top 2000 highly variable genes (HVGs) are identified and plotted by PCA displaying treatment status, high vs low methylation and batch.
+
+```{r, echo = TRUE, eval = FALSE}
+
+source("./scripts/HVGs_identify_cluster_heatmap.R")
+
+HVGs_select_and_PCA(sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",
+                    chr.to.keep = c("1", "2", "3", "4", "5", "6","7","8", "9","10","11", "12","13","14", "15","16","17", "18","19","20","21", "22", NA), # NA represents TEs
+                    Keep.genes.TEs <- c("gene","TE"), # Enables HVG selection to filter for either just gene or TE, or both N.B. Make sure 'chr.to.keep' doesn't filter out TEs if you want to keep them.
+                    output.fig.dir = "./figures/colony/MOLM/HVGs/",
+                    output.file.dir = "./2_results/colony/MOLM/HVGs/",
+                    output.file.name = 'HVGs_2000.txt',
+                    batch.correction.method = "mnnCorrected",
+                    PCA.methylation.threshold = 75,
+                    Number.of.genes = 2000,
+                    size = 3,
+                    width = 6,
+                    height = 4,
+                    alpha = 0.6,
+                    svg = TRUE,
+                    all_cols = c("unt" = "green", "aza" =  "blue", "dac"  = "red",
+                                 "rep1" = "orange", "rep2" = "violet", "rep3" = "brown"),
+                    set.the.seed = TRUE)
+```
+
+### By Batch {.unnumbered}
+```{r, results=params$fig.results}
+Cell.type <- "MOLM"
+include_graphics(paste0('./figures/colony/',Cell.type,'/HVGs/PCA_mnnCorrected_Top_2000_HVGs-ByBatch.png'))
+```
+
+### By Treatment {.unnumbered}
+```{r, results=params$fig.results}
+Cell.type <- "MOLM"
+include_graphics(paste0('./figures/colony/',Cell.type,'/HVGs/PCA_mnnCorrected_Top_2000_HVGs-ByTreatment.png'))
+```
+
+## Heatmap HVGs 
+
+```{r, echo = TRUE, eval = FALSE}
+
+source("./scripts/HVGs_identify_cluster_heatmap.R")
+
+Heatmap_from_list(sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",
+                  HVG.table = "./figures/colony/MOLM/HVGs/HVGs_2000.txt",
+                  methylation.threshold = 75,
+                  kmeans.clusters = 8,
+                  kmeans.iter = 50,
+                  kmeans.nstart = 30,
+                  output.fig.dir = "./figures/colony/MOLM/HVGs/",
+                  output.file.dir = "./2_results/colony/MOLM/HVGs/",
+                  batch.correction.method = "mnnCorrected",
+                  plot.Heatmap.Row.Normalisations = c("Zscored"), # Can be restricted to just one or two options. c("Zscored", "Mean_Centred", "Raw")
+                  plot.Pheatmap.style = FALSE,
+                  plot.Complex.Heatmap.NoRowCluster.style = TRUE,
+                  plot.Complex.Heatmap.WithRowCluster.style = TRUE,
+                  set.the.seed = TRUE)
+
+
+```
+
+### Kmeans within cluster - Zscored {.unnumbered}
+```{r, results=params$fig.results}
+Cell.type <- "MOLM"
+Row.normalisation <- "Zscored"
+include_graphics(paste0('./figures/colony/',Cell.type,'/HVGs/',Row.normalisation,'/Complex.Heatmap_HVGs_Kmeans_within_clusters_Zscored.png'))
+```
+
+## ORA
+
+All of these analyses are using the ClusterProfiler package. The functions used here are wrappers for:  
+* clusterProfiler::compareCluster() # For GO  
+* clusterProfiler::enrichGO()       # For GO individually looping clusters.  
+* clusterProfiler::enricher()       # MsigDB  
+* clusterProfiler::enrichKEGG()     # KEGG  
+
+### GO - clusterProfiler {.tabset}
+
+```{r, echo = TRUE, eval = FALSE}
+source("./scripts/ClusterProfiler_ORA_functions.R")
+
+Perform_ORA_GO(Cluster.run.file = "./figures/colony/MOLM/HVGs/Zscored/Kmeans_cluster_list_Zscored.txt",
+               cluster.number.s = c(1,7,2,3,8,4,6,5), # This will also determine the order of the groups in the plots
+               sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",  # For background
+               batch_correction_method = "mnnCorrected",
+               chr.to.keep = c("1", "2", "3", "4", "5", "6","7","8", "9","10","11", "12","13","14", "15","16","17", "18","19","20","21", "22", NA), # NA represents TEs 
+               Keep.genes.TEs = c("gene"),
+               
+               Compare.Cluster = TRUE,
+               categories.to.test = c("BP"),
+               p.adj.method = "fdr", 
+               p.adj.threshold = 0.05,    
+               q.val.threshold = 0.4,         
+               plot.key.colour = "p.adjust",
+               showCategory.number = 3,
+               output.fig.dir = "./figures/colony/MOLM/HVGs/Zscored/ORA/",
+               output.file.dir = "./2_results/colony/MOLM/HVGs/Zscored/ORA/",
+               output.extension.name = "",
+               add.plots = FALSE,
+               plot.dims.manual = TRUE,
+               plotx.height.png = 22, # Adjust as required (some defaults provided in the script)
+               plotx.width.png = 12, 
+               plotx.height.svg = 22,
+               plotx.width.svg = 12, 
+               ploty.height.png = 17,
+               ploty.width.png = 25, 
+               ploty.height.svg = 14,
+               ploty.width.svg = 26)
+
+```
+#### Top3 {.unnumbered}
+
+```{r, results=params$fig.results}
+include_graphics(paste0('./figures/colony/MOLM/HVGs/Zscored/ORA/Kmeans_cluster_list_Zscored_compareCluster_GO-BP_ploty_top3.png'))
+```
+
+
+### GO - enrichGO looped
+No plots. Just table of results
+
+```{r, echo = TRUE, eval = FALSE}
+source("./scripts/ClusterProfiler_ORA_functions.R")
+
+Perform_ORA_GO(Cluster.run.file = "./figures/colony/MOLM/HVGs/Zscored/Kmeans_cluster_list_Zscored.txt",
+               cluster.number.s = c(1:8),
+               sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",  # For background
+               batch_correction_method = "mnnCorrected",
+               chr.to.keep = c("1", "2", "3", "4", "5", "6","7","8", "9","10","11", "12","13","14", "15","16","17", "18","19","20","21", "22", NA), # NA represents TEs 
+               Keep.genes.TEs = c("gene"),
+               
+               Compare.Cluster = FALSE,
+               categories.to.test = c("BP","CC", "MF"),
+               p.adj.method = "fdr", 
+               p.adj.threshold = 0.05,    
+               q.val.threshold = 1,         
+               plot.key.colour = "p.adjust",
+               showCategory.number = NA,
+               output.fig.dir = "./figures/colony/MOLM/HVGs/Zscored/ORA/",
+               output.file.dir = "./2_results/colony/MOLM/HVGs/Zscored/ORA/",
+               output.extension.name = "",
+               add.plots = FALSE)
+
+```
+
+### KEGG
+No plots. Just table of results  
+http://yulab-smu.top/biomedical-knowledge-mining-book/clusterprofiler-kegg.html
+
+```{r, echo = TRUE, eval = FALSE}
+source("./scripts/ClusterProfiler_ORA_functions.R")
+
+Perform_ORA_KEGG(Cluster.run.file = "./figures/colony/MOLM/HVGs/Zscored/Kmeans_cluster_list_Zscored.txt",
+                 cluster.number.s = c(1:8),
+                 sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds", # For background
+                 batch_correction_method = "mnnCorrected",
+                 p.adj.method = "fdr",
+                 p.adj.threshold = 0.05,
+                 q.val.threshold = 1,
+                 plot.key.colour = "p.adjust",
+                 output.fig.dir = "./figures/colony/MOLM/HVGs/Zscored/ORA/",
+                 output.file.dir = "./2_results/colony/MOLM/HVGs/Zscored/ORA/",
+                 output.extension.name = "",
+                 chr.to.keep = c("1", "2", "3", "4", "5", "6","7","8", "9","10","11", "12","13","14", "15","16","17", "18","19","20","21", "22", NA), # NA represents TEs 
+                 Keep.genes.TEs = c("gene"))
+
+```
+
+### MSigDB
+No plots. Just table of results
+```{r, echo = TRUE, eval = FALSE}
+source("./scripts/ClusterProfiler_ORA_functions.R")
+
+Perform_ORA_MSigDB(Cluster.run.file = "./figures/colony/MOLM/HVGs/Zscored/Kmeans_cluster_list_Zscored.txt",
+                   cluster.number.s = c(1:8),
+                   sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",  # For background
+                   batch_correction_method = "mnnCorrected",
+                   chr.to.keep = c("1", "2", "3", "4", "5", "6","7","8", "9","10","11", "12","13","14", "15","16","17", "18","19","20","21", "22", NA), # NA represents TEs 
+                   Keep.genes.TEs = c("gene"),
+                               
+                   p.adj.method = "fdr", 
+                   msigdb.categories.to.test = c("H","C1","C2","C3","C4","C5","C6"),
+                   p.adj.threshold = 0.05,              
+                   q.val.threshold = 1,  
+                   plot.key.colour = "p.adjust",             
+                   output.fig.dir = "./figures/colony/MOLM/HVGs/Zscored/ORA/",
+                   output.file.dir = "./2_results/colony/MOLM/HVGs/Zscored/ORA/",
+                   output.extension.name = "",
+                   add.plots = FALSE)
+
+```
+
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+# Correlation of Expr~Methylation
+This is being run in DAC only, as they were the only treatment group with a high number of methylating retaining colonies and we were particularly interested to see what genes might be differentially regulated in these (methlyation retaining) colonies.
+
+## Run correlation in DAC cells only
+Steps:
+i) Filter for only dac cells. 
+ii) Correlate expression of all genes and TEs against global methylation levels.
+iii) Add multiple testing correction and gene info.
+iv) Plot basic correlation summary
+```{r Correlate_gene_methylation, echo = TRUE, eval = FALSE}
+
+
+source("./scripts/Correlate_gene_vs_methylation.R")
+
+correlate_expr_methyl(sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",
+                                 sample.sheet = "1_data/colony/MOLM/Sample_analysis_sheet.csv",
+                                 treatments = "dac",
+                                 output.fig.dir = "./figures/colony/MOLM/Correlated_Expression/",
+                                 output.file.dir = "./2_results/colony/MOLM/Correlated_Expression/",
+                                 batch.correction.method = "mnnCorrected")
+
+
+```
+
+Histogram of correlation estimate values
+
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Expr_Meth_Corr_est_hist_dac.png')
+```
+
+Correlation estimate vs padj values
+
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Expr_Meth_Corr_est_vs_pval_dac.png')
+```
+
+## Heatmap/Cluster correlated genes {.tabset}
+Perform Heatmapping in all treatment groups using the genes found to be significantly (p.adj[BH]<0.05) and positively (x >= 0.4) or negatively (x <= -0.4) correlated with methylation in DAC colonies.   
+This identified two major groups (Run 2):
+1. Downregulated in HMA treated methylation loss dependent (cluster 1)
+2. Up regulated in HMA treated methylation loss dependent (cluster 2:4)
+
+
+```{r Heatmap_and_cluster, echo = TRUE, eval = FALSE}
+
+source("./scripts/Heatmap_and_cluster_by_treatment_mean_for_correlated_or_all_genes.R")
+#source("./scripts/in_use/Heatmap_and_cluster_correlated_gene_list_function.R")
+
+Heatmap_by_treatment_group_corr_genes(sce.rds.file ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds",
+                                  correlated.gene.results = "./2_results/colony/MOLM/Correlated_Expression/Methylation_Exp_mnnCorrected_correlation.csv",
+                                  padj.threshold = 0.05,
+                                  corr.est.threshold = 0.4,
+                                  methylation.threshold = 75,
+                                  kmeansk.chosen = 4,
+                                  # sample.sheet = "1_data/colony/MOLM/Sample_analysis_sheet.csv",
+                                  treatments = "dac",
+                                  output.fig.dir = "./figures/colony/MOLM/Correlated_Expression/",
+                                  output.file.dir = "./2_results/colony/MOLM/Correlated_Expression/",
+                                  batch.correction.method = "mnnCorrected",
+                                  Number.of.plots = 5,
+                                  set.the.seed = TRUE)
+
+
+```
+
+
+### Run 1
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Heatmap_DAC_Pos.Neg_0.4_mnnCorrected_Average_across_treatment_groups_MeanCentred_4Km_Run1.png')
+```
+
+### Run 2
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Heatmap_DAC_Pos.Neg_0.4_mnnCorrected_Average_across_treatment_groups_MeanCentred_4Km_Run2.png')
+```
+
+### Run 3
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Heatmap_DAC_Pos.Neg_0.4_mnnCorrected_Average_across_treatment_groups_MeanCentred_4Km_Run3.png')
+```
+
+### Run 4
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Heatmap_DAC_Pos.Neg_0.4_mnnCorrected_Average_across_treatment_groups_MeanCentred_4Km_Run4.png')
+```
+
+### Run 5
+```{r, results=params$fig.results}
+include_graphics('./figures/colony/MOLM/Correlated_Expression/Heatmap_DAC_Pos.Neg_0.4_mnnCorrected_Average_across_treatment_groups_MeanCentred_4Km_Run5.png')
+```
+
+
+## ORA GO analysis (Run2)
+
+### C1 - Meth loss dependent - Downreg {.tabset}
+Performing Go analysis on genes from heatmap run 2, cluster 1.
+
+
+```{r, echo = TRUE, eval = FALSE}
+
+source("./scripts/Go_analysis_and_plotting_wrapper.R")
+
+Run.Number <- 2
+Cluster.Number <- 1
+
+Perform_GO_and_plot_from_cluster_results(Cluster.run = paste0("./2_results/colony/MOLM/Correlated_Expression/Methylation_Exp_mnnCorrected_correlation_and_heatmap_cluster_Run",Run.Number,".csv"),
+                                         cluster.number = Cluster.Number,
+                                         sce_used ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds", # For background
+                                         batch_correction_method = "mnnCorrected",
+                                         p.adj.method = "fdr",
+                                         p.adj.threshold = 0.05,
+                                         plot.key.colour = "p.adjust",
+                                         output.fig.dir = "./figures/colony/MOLM/Correlated_Expression/Meth_low_downreg/",
+                                         output.file.dir = "./2_results/colony/MOLM/Correlated_Expression/Meth_low_downreg/",
+                                         output.extension.name = paste0("Run",Run.Number,"C",Cluster.Number) ) # automatically creates extension with 'RunXCY'
+
+```
+
+
+#### Barplot {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C1"
+Cluster.name <- "Meth_low_downreg"
+  
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_barplot',Run,'.png'))
+```
+
+#### Dotplot {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C1"
+Cluster.name <- "Meth_low_downreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_dotplot',Run,'.png'))
+```
+
+#### Treeplot {.tabset .unnumbered}
+
+##### Tree 1 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C1"
+Cluster.name <- "Meth_low_downreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_1',Run,'.png'))
+```
+
+##### Tree 2 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C1"
+Cluster.name <- "Meth_low_downreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_2',Run,'.png'))
+```
+
+
+##### Tree 3 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C1"
+Cluster.name <- "Meth_low_downreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_3',Run,'.png'))
+```
+
+##### Tree 4 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C1"
+Cluster.name <- "Meth_low_downreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_4',Run,'.png'))
+```
+
+
+
+### C2:4 - Methylation loss dependent - Upreg {.tabset}
+Performing Go analysis on genes from heatmap run 3, cluster 2:4
+
+N.B RESULTS DISPLAYED ARE P.UNADJUSTED. There were 'hits' that survived p.adjustment. The reason for using p unajusted was to allow enough to be visualised on the tree plot (for those still reaching p significance but just missing p.unadj)
+
+
+```{r, echo = TRUE, eval = FALSE}
+
+source("./scripts/Go_analysis_and_plotting_wrapper.R")
+
+Run.Number <- 2
+Cluster.Number <- c(2,3,4)
+
+Perform_GO_and_plot_from_cluster_results(Cluster.run = paste0("./2_results/colony/MOLM/Correlated_Expression/Methylation_Exp_mnnCorrected_correlation_and_heatmap_cluster_Run",Run.Number,".csv"),
+                                         cluster.number = Cluster.Number,
+                                         sce_used ="2_results/colony/MOLM/Batch_Correction/sce_qc2_norm_mnnCorrect_scMerged_2C.rds", # For background
+                                         batch_correction_method = "mnnCorrected", 
+                                         p.adj.method = "none",  # Can be "none", "fdr","bh" etc
+                                         p.adj.threshold = 0.05,
+                                         plot.key.colour = "pvalue", # Can be 'p.adjust', 'pvalue' or 'qvalue'
+                                         output.fig.dir = "./figures/colony/MOLM/Correlated_Expression/Meth_low_upreg/",
+                                         output.file.dir = "./2_results/colony/MOLM/Correlated_Expression/Meth_low_upreg/",
+                                         output.extension.name = paste0("Run",Run.Number,"C", paste(Cluster.Number,collapse='-')) ) # automatically creates extension with 'RunXCY'. More than 1 cluster will be extended with '-' for each additional cluster number
+
+```
+
+
+
+
+#### Barplot {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C2-3-4"
+Cluster.name <- "Meth_low_upreg"
+  
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_barplot',Run,'.png'))
+```
+
+#### Dotplot {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C2-3-4"
+Cluster.name <- "Meth_low_upreg"
+
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_dotplot',Run,'.png'))
+```
+
+#### Treeplot {.tabset .unnumbered}
+
+##### Tree 1 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C2-3-4"
+Cluster.name <- "Meth_low_upreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_1',Run,'.png'))
+```
+
+##### Tree 2 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C2-3-4"
+Cluster.name <- "Meth_low_upreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_2',Run,'.png'))
+```
+
+
+##### Tree 3 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C2-3-4"
+Cluster.name <- "Meth_low_upreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_3',Run,'.png'))
+```
+
+##### Tree 4 {.unnumbered}
+
+```{r, results=params$fig.results}
+Run <- "_Run2C2-3-4"
+Cluster.name <- "Meth_low_upreg"
+include_graphics(paste0('./figures/colony/MOLM/Correlated_Expression/',Cluster.name,'/EnrichGo_Tree_plot_4',Run,'.png'))
+```
+

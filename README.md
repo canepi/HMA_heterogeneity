@@ -8,13 +8,8 @@ Abstract
 DNA hypomethylating agents (HMAs) are used to treat acute myeloid leukaemia (AML) and myelodysplasia patients who are unsuitable for intensive chemotherapy, but low response rates and therapy-resistant relapse remain significant challenges. To optimise HMA efficacy, we must understand how resistance and relapse arise from cells that survive treatment. Here we combine single-cell multi-omic analysis with parallel colony-forming assays to link HMA-induced molecular heterogeneity with functional consequences in AML cells. HMAs, azacytidine (AZA) and decitabine (DAC), induced global epigenetic heterogeneity associated with upregulation of inflammatory responses and cell death pathways in a subset of hypomethylated cells. Some AML cells maintained high DNA methylation during treatment, and these methylation-retaining cells had increased self-renewal capacity following DAC, but not AZA. Molecular profiling of individual colonies revealed upregulated cholesterol biosynthesis as an adaptation to HMA treatment, and inhibition by rosuvastatin enhanced DAC effects in vitro and in vivo. Thus, HMA-induced heterogeneity has important implications for AML cell growth and statins are a candidate co-treatment strategy to delay or prevent HMA-resistant relapse.
 
 <p align="center">
- <img src="230815_Figure1.png" style="width: 30%; height: 30%"/>​
+ <img src="Figure1.png" style="width: 30%; height: 30%"/>​
 </p>
-
-<p align="center">
- <img src="231211_Figure2.png" style="width: 30%; height: 30%"/>​
-</p>
-
 
 Content:
 --------
@@ -35,5 +30,5 @@ Computational analysis: Dr Sean Burnard (sean.burnard@newcastle.edu.au)
 
 # To Do:
 1. Add GEO accession ID and hyperlink after upload completion and release.
-2. Add 'scNMTseq' codes
-3. Add 'single_colony_TEMseq' codes
+2. ~~Add 'scNMTseq' codes~~
+3. ~~Add 'single_colony_TEMseq' codes~~

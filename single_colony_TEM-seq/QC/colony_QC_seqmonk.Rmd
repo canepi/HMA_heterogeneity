@@ -1,0 +1,235 @@
+---
+title: |
+  <p style="color:purple; text-align:center"> **HMA treatment RNAseq analysis** </p>
+  <center> **Colony QC** </centre>
+  <p style="text-align:center; font-size:32px"> Based primarily on seqmonk and hisat2 QC data </p>
+
+author: "Sean Burnard"
+email: "sean.burnard@newcastle.edu.au"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+params:
+  fig.results: 'asis'
+  shape: 16
+  alpha: 0.75
+  eval.fig: TRUE
+  echo.fig: FALSE
+  eval.run.analysis: FALSE
+output:   
+  html_document:
+    number_sections: TRUE
+    toc: TRUE
+    toc_float:
+      toc_collapsed: FALSE
+    toc_depth: 4
+    css: style.css
+---
+
+This report is only on **Colony RNA-seq QC** based on the seqmonk and hisat2 reports.
+
+---
+
+# Prepocessing steps
+
+1. Aligned '.bam' files were generated using Hisat2, retaining ambiguous/ multi-mapping reads.
+2. Bam files were added into seqmonk (v?) and RNAseq QC report generated. These QC metrics and thresholds have been set based on the seqmonk and hisat2 reports (from multiqc).
+3. TEtranscripts equivalent QC information is yet to be finalised and integrated into these reports, potentially replacing the use of seqmonk as well.
+
+---
+
+```{r setup}
+library(knitr)
+```
+
+# Seqmonk and hisat2 QC reports 
+
+Collate and plot seqmonk and hisat2 reports
+
+```{r Update_Merged.CntTables, echo = TRUE, eval = FALSE}
+
+source("./scripts/QC_seqmonk_collate_reports.R")
+
+```
+
+## Alignment vs reads
+
+Comparison of % alignment vs Number of paired reads (after trimming) for each cell line. This is based on the hisat2 reports.
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/QC/Align_vs_reads.png')
+```
+
+## Percent in Mitochondria
+
+Comparison of % of reads in mitochondria based on seqmonk reports. HL60s have a higher % of reads in mitochondria compared to MOLMs and MVs. This is mostly driven by rep 1 in HL60s.
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/QC/Percent_in_MT.png')
+```
+
+## Percent in Exons vs Genes Measured
+
+Comparison of the % of reads in exons (x) vs % of Genes Measured (y). The dotted lines show the thresholds originally set for HL60s/
+
+HL60 libraries have much higher quality library metrics compared to MOLMs and MVs. The majority of untreated colonies in MOLMs and MVs fail the original HL60 QC threshold (>35% genes measured & > 70% genes measured). Therefore, these threshold will need to relaxed to enable more untreated colonies to be analysed but still need to avoid inclusion of too noisy/poor libraries.
+
+```{r, echo = params$echo.fig, out.width='95%', output.height="95%", fig.align='center', eval = params$eval.fig}
+include_graphics('./figures/colony/QC/In_Exons_vs_Genes_Measured.png')
+```
+
+# Filter samples on QC values 
+This function automatically filters separate cell lines based on three optional criteria (default value):
+1. overall.alignment.rate.threshold (70)
+2. Percent.Genes.Measured.threshold (35)
+3. Percent.in_exons.threshold (65)
+
+```{r sample_filtering, echo = TRUE, eval = FALSE}
+
+source("./scripts/QC_seqmonk_sample_filtering_function.R")
+
+# HL60
+Sample_QC_filter(QC.file = "./2_results/colony/QC/QC_stats_seqmonk_hisat2_summarised_ALL_colonies.csv",
+                             cell = "HL60",
+                             overall.alignment.rate.threshold = 0,
+                             Percent.Genes.Measured.threshold = 35,
+                             Percent.in_exons.threshold = 70,
+                             output.folder = "./2_results/colony/HL60/QC")
+
+# MOLM
+Sample_QC_filter(QC.file = "./2_results/colony/QC/QC_stats_seqmonk_hisat2_summarised_ALL_colonies.csv",
+                             cell = "MOLM",
+                             overall.alignment.rate.threshold = 0,
+                             Percent.Genes.Measured.threshold = 35,
+                             Percent.in_exons.threshold = 70,
+                             output.folder = "./2_results/colony/MOLM/QC")
+
+
+# MV
+Sample_QC_filter(QC.file = "./2_results/colony/QC/QC_stats_seqmonk_hisat2_summarised_ALL_colonies.csv",
+                             cell = "MV",
+                             overall.alignment.rate.threshold = 0,
+                             Percent.Genes.Measured.threshold = 35,
+                             Percent.in_exons.threshold = 65,
+                             output.folder = "./2_results/colony/MV/QC")
+
+
+
+```
+
+## Colonies passing QC {.tabset}
+
+### HL60 
+
+```{r, echo = TRUE, eval = TRUE, error=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(data.table)
+library(kableExtra)
+colony.QC.folder = "./2_results/colony/HL60/QC"
+thresholds <- fread(paste0(colony.QC.folder,"/QC_thresholds_used.txt"))
+Treatment_passing <- fread(paste0(colony.QC.folder,"/QC_treatment_passing.txt"))
+Reps_passing <- fread(paste0(colony.QC.folder,"/QC_treatment_and_reps_passing.txt"))
+kbl(thresholds[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+kbl(Treatment_passing[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+kbl(Reps_passing[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+
+### MOLM 
+
+```{r, echo = TRUE, eval = TRUE, error=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(data.table)
+library(kableExtra)
+colony.QC.folder = "./2_results/colony/MOLM/QC"
+thresholds <- fread(paste0(colony.QC.folder,"/QC_thresholds_used.txt"))
+Treatment_passing <- fread(paste0(colony.QC.folder,"/QC_treatment_passing.txt"))
+Reps_passing <- fread(paste0(colony.QC.folder,"/QC_treatment_and_reps_passing.txt"))
+kbl(thresholds[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+kbl(Treatment_passing[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+kbl(Reps_passing[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+
+
+### MV 
+
+```{r, echo = TRUE, eval = TRUE, error=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(data.table)
+library(kableExtra)
+colony.QC.folder = "./2_results/colony/MV/QC"
+thresholds <- fread(paste0(colony.QC.folder,"/QC_thresholds_used.txt"))
+Treatment_passing <- fread(paste0(colony.QC.folder,"/QC_treatment_passing.txt"))
+Reps_passing <- fread(paste0(colony.QC.folder,"/QC_treatment_and_reps_passing.txt"))
+kbl(thresholds[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+kbl(Treatment_passing[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+kbl(Reps_passing[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+
+## Thresholds set summary
+
+```{r, echo = FALSE, eval = TRUE, error=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(data.table)
+library(kableExtra)
+colony.QC.folder = "./2_results/colony/HL60/QC"
+thresholds_1 <- fread(paste0(colony.QC.folder,"/QC_thresholds_used.txt")) %>% rename(HL60 = Above)
+colony.QC.folder = "./2_results/colony/MOLM/QC"
+thresholds_2 <- fread(paste0(colony.QC.folder,"/QC_thresholds_used.txt")) %>% rename(MOLM = Above)
+colony.QC.folder = "./2_results/colony/MV/QC"
+thresholds_3 <- fread(paste0(colony.QC.folder,"/QC_thresholds_used.txt")) %>% rename(MV = Above)
+
+thresholds_combined <- left_join(thresholds_1, thresholds_2, by = 'Threshold.type') %>% left_join(thresholds_3, by = 'Threshold.type') 
+kbl(thresholds_combined[,]) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+
+```
+
+
+## Colonies by treatment group QCd
+
+```{r, echo = FALSE, eval = TRUE, error=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(data.table)
+# library(kableExtra)
+library(ggplot2)
+colony.QC.folder = "./2_results/colony/HL60/QC"
+Treatment_passing_1 <- fread(paste0(colony.QC.folder,"/QC_treatment_passing.txt")) %>% mutate(Cell = "HL60")
+
+colony.QC.folder = "./2_results/colony/MOLM/QC"
+Treatment_passing_2 <- fread(paste0(colony.QC.folder,"/QC_treatment_passing.txt")) %>% mutate(Cell = "MOLM")
+colony.QC.folder = "./2_results/colony/MV/QC"
+Treatment_passing_3 <- fread(paste0(colony.QC.folder,"/QC_treatment_passing.txt")) %>% mutate(Cell = "MV")
+
+Treatment_passing_combined <- rbind(Treatment_passing_1, Treatment_passing_2, Treatment_passing_3) 
+Treatment_passing_combined$Cell <- as.factor(Treatment_passing_combined$Cell)
+
+
+p <- ggplot(Treatment_passing_combined, aes(x = Cell, y = total_passing_QC, fill = Treatment)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  geom_text(aes(label=total_passing_QC), vjust=1.6, color="white",
+            position = position_dodge(0.9), size=3.5)
+
+p
+
+```
+
+
+After reducing the QC threshold only slightly for MOLM and MVs (Percent in Exons min from 70 to 65), there is still enough untreated colonies remaining. Need to keep an eye on how well rep 1 in both MOLMs and MV untreated colonies are batch corrected, as there is only 1 and 2 passing QC in these reps, respectively.
+
+
+
+    

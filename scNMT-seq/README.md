@@ -34,4 +34,4 @@ Manuscript correspondence: Dr Danielle Bond (danielle.bond@newcastle.edu.au) and
 Computational analysis: Dr Sean Burnard (sean.burnard@newcastle.edu.au)
 
 # To Do:
-1. Add GEO accession ID and hyperlink after upload completion and release.
+1. Add GEO accession ID and hyperlink after upload completion and public release.
